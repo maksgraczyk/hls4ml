@@ -8,6 +8,7 @@ pytest:
     - git submodule update
     - conda activate hls4ml-testing
     - pip install .[profiling]
+    - pip install pytest-mock
   script:
     - cd test/pytest
     - pytest -rA --cov-report xml --cov=hls4ml --junitxml=report.xml
