@@ -2,7 +2,7 @@ import pytest
 import re
 import hls4ml
 import numpy as np
-from keras.regularizers import l1
+from tensorflow.keras.regularizers import l1
 from tensorflow.keras.layers import Input, Conv2D, Dense, Activation, MaxPooling2D, Flatten, Dropout
 from tensorflow.keras.models import Sequential
 from qkeras import QDense, QConv2D, quantized_bits
