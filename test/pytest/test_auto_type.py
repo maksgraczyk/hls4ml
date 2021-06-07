@@ -2,6 +2,7 @@ import pytest
 import re
 import hls4ml
 import numpy as np
+import json
 from tensorflow.keras.regularizers import l1, l2
 from tensorflow.keras.layers import Input, Conv2D, Dense, Activation, MaxPooling2D, Flatten, Dropout
 from tensorflow.keras.models import Sequential
@@ -266,3 +267,119 @@ def test_set_data_types_from_keras_max_bits_complied_with(models):
                 match = re.search(r'(\d+)', value['Precision'])
                 assert match
                 assert int(match.group(1)) <= i + 1
+
+
+def test_set_data_types_from_keras_qkeras_layers_unchanged(qkeras_models):
+    for model in qkeras_models:
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name')
+
+        new_config = json.loads(json.dumps(config))
+        hls4ml.utils.config.set_data_types_from_keras_model(new_config, model, max_bits=15)
+
+        for key, value in config['LayerName'].items():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key in qkeras_inferred:
+                        assert new_config['LayerName'][key]['Precision'][prec_key] == precision
+
+
+def test_set_data_types_from_keras_qkeras_layers_changed(qkeras_models):
+    for model in qkeras_models:
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name')
+
+        new_config = json.loads(json.dumps(config))
+        hls4ml.utils.config.set_data_types_from_keras_model(new_config, model, max_bits=5, change_flagged_types=True)
+
+        for key, value in config['LayerName'].items():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key in qkeras_inferred:
+                        assert new_config['LayerName'][key]['Precision'][prec_key] != precision
+
+
+def test_set_data_types_from_keras_no_test_inputs_output_types_unchanged(models):
+    for model in models:
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
+
+        new_config = json.loads(json.dumps(config))
+        hls4ml.utils.config.set_data_types_from_keras_model(new_config, model, max_bits=5)
+
+        for key, value in new_config['LayerName'].items():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key in ['result', 'output']:
+                        if prec_key in qkeras_inferred:
+                            assert precision == config['LayerName'][key]['Precision'][prec_key]
+                        else:
+                            assert precision == 'dummy'
+            elif value['LayerType'] in ['Activation', 'Softmax']:
+                assert value['Precision'] == 'dummy'
+
+
+def test_set_data_types_from_keras_test_inputs_output_types_changed(models):
+    for i, model in enumerate(models):
+        print(i)
+        input_shape = (5,) + model.layers[0].input_shape[1:]
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
+
+        new_config = json.loads(json.dumps(config))
+        hls4ml.utils.config.set_data_types_from_keras_model(new_config, model, max_bits=5,
+                                                            test_inputs=np.random.rand(*input_shape))
+
+        print(new_config)
+
+        for key, value in new_config['LayerName'].items():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key in ['result', 'output']:
+                        if prec_key in qkeras_inferred:
+                            assert precision != config['LayerName'][key]['Precision'][prec_key]
+                        else:
+                            assert precision != 'dummy'
+            elif value['LayerType'] in ['Activation', 'Softmax']:
+                assert value['Precision'] != 'dummy'
+
+
+def test_set_data_types_from_keras_custom_best_type_algorithm(models):
+    for i, model in enumerate(models, 10):
+        def test_algorithm(layer_type, max_val, min_val, median, q1, q3, max_bits):
+            return max_bits + 1, max_bits - 1
+
+        input_shape = (5,) + model.layers[0].input_shape[1:]
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
+        hls4ml.utils.config.set_data_types_from_keras_model(config, model, max_bits=i,
+                                                            test_inputs=np.random.rand(*input_shape),
+                                                            best_type_algorithm=test_algorithm)
+
+        for value in config['LayerName'].values():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key not in qkeras_inferred and precision != 'dummy':
+                        assert precision == f'ap_fixed<{i + 1},{i - 1}>'
+            elif value['Precision'] != 'dummy':
+                assert value['Precision'] == f'ap_fixed<{i + 1},{i - 1}>'
+
+
+def test_set_accum_from_keras_accum_types_changed(models):
+    for model in models:
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name')
+
+        for value in config['LayerName'].values():
+            if isinstance(value['Precision'], dict) and 'accum' in value['Precision']:
+                value['Precision']['accum'] = 'dummy'
+
+        hls4ml.utils.config.set_accum_from_keras_model(config, model)
+
+        for value in config['LayerName'].values():
+            if isinstance(value['Precision'], dict) and 'accum' in value['Precision']:
+                assert value['Precision']['accum'] != 'dummy'
