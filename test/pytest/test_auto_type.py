@@ -2,7 +2,7 @@ import pytest
 import re
 import hls4ml
 import numpy as np
-from tensorflow.keras.regularizers import l1
+from tensorflow.keras.regularizers import l1, l2
 from tensorflow.keras.layers import Input, Conv2D, Dense, Activation, MaxPooling2D, Flatten, Dropout
 from tensorflow.keras.models import Sequential
 from qkeras import QDense, QConv2D, quantized_bits
@@ -26,7 +26,7 @@ def model2():
               bias_initializer='lecun_uniform', activation='relu'),
         QDense(5, name='fc2', kernel_initializer='lecun_uniform',
                bias_initializer='lecun_uniform', kernel_quantizer=quantized_bits(15, 5),
-               bias_quantizer=quantized_bits(7, 2)),
+               bias_quantizer=quantized_bits(10, 2)),
         Activation(activation='softmax', name='softmax')
     ])
     return model
@@ -56,16 +56,16 @@ def model4():
             QConv2D(16, kernel_size=(3, 3), activation='relu',
                     kernel_initializer='lecun_uniform',
                     bias_initializer='lecun_uniform',
-                    kernel_quantizer=quantized_bits(6, 0, alpha=1),
-                    bias_quantizer=quantized_bits(6, 0, alpha=1)),
+                    kernel_quantizer=quantized_bits(15, 2, alpha=1),
+                    bias_quantizer=quantized_bits(11, 3, alpha=1)),
             MaxPooling2D(pool_size=(2, 2)),
             Flatten(),
             Dropout(0.5),
             QDense(10,
                    kernel_initializer='lecun_uniform',
                    bias_initializer='lecun_uniform',
-                   kernel_quantizer=quantized_bits(6, 0, alpha=1),
-                   bias_quantizer=quantized_bits(6, 0, alpha=1)),
+                   kernel_quantizer=quantized_bits(14, 2, alpha=1),
+                   bias_quantizer=quantized_bits(12, 1, alpha=1)),
             Activation(activation='softmax', name='softmax'),
         ]
     )
@@ -96,8 +96,48 @@ def model5():
 
 
 @pytest.fixture(scope='module')
-def models(model1, model2, model3, model4, model5):
-    return [model1, model2, model3, model4, model5]
+def model6():
+    model = Sequential([
+        Dense(64, input_shape=(16,), name='fc1',
+              use_bias=False,
+              kernel_initializer='lecun_uniform', kernel_regularizer=l2(0.0001)),
+        Activation(activation='relu', name='relu1'),
+        Dense(32, name='fc2',
+              use_bias=False,
+              kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.0001)),
+        Activation(activation='relu', name='relu2'),
+        Dense(32, name='fc3',
+              use_bias=False,
+              kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.0001)),
+        Activation(activation='relu', name='relu3'),
+        Dense(32, name='fc4',
+              use_bias=False,
+              kernel_initializer='lecun_uniform', kernel_regularizer=l2(0.0001)),
+        Activation(activation='relu', name='relu4'),
+        Dense(32, name='fc5',
+              use_bias=False,
+              kernel_initializer='lecun_uniform'),
+        Activation(activation='relu', name='relu5'),
+        Dense(32, name='fc6',
+              bias_initializer='lecun_uniform',
+              kernel_initializer='lecun_uniform', kernel_regularizer=l1(0.0001)),
+        Activation(activation='relu', name='relu6'),
+        Dense(5, name='output',
+              bias_initializer='lecun_uniform',
+              kernel_initializer='lecun_uniform'),
+        Activation(activation='softmax', name='softmax')
+    ])
+    return model
+
+
+@pytest.fixture(scope='module')
+def models(model1, model2, model3, model4, model5, model6):
+    return [model1, model2, model3, model4, model5, model6]
+
+
+@pytest.fixture(scope='module')
+def qkeras_models(model2, model4):
+    return [model2, model4]
 
 
 def test_config_from_keras_default_no_calls(mocker, models):
