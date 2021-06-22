@@ -185,6 +185,9 @@ def check_model(model, plot, test_inputs=None, config_updates=None):
             assert key in config
             assert config[key] == value
 
+            assert key in hls_model.config.config['HLSConfig']
+            assert hls_model.config.config['HLSConfig'][key] == value
+
 
 def test_numerical_finishes_no_test_inputs_boxplot(models):
     for model in models:
