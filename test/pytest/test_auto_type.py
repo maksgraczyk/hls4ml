@@ -324,15 +324,12 @@ def test_set_data_types_from_keras_no_test_inputs_output_types_unchanged(models)
 
 def test_set_data_types_from_keras_test_inputs_output_types_changed(models):
     for i, model in enumerate(models):
-        print(i)
         input_shape = (5,) + model.layers[0].input_shape[1:]
         config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
 
         new_config = json.loads(json.dumps(config))
         hls4ml.utils.config.set_data_types_from_keras_model(new_config, model, max_bits=5,
                                                             test_inputs=np.random.rand(*input_shape))
-
-        print(new_config)
 
         for key, value in new_config['LayerName'].items():
             qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
