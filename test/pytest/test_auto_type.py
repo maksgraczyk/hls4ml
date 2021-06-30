@@ -52,7 +52,7 @@ def model4():
             Input(shape=(28, 28, 1)),
             Conv2D(16, kernel_size=(3, 3), activation='relu',
                    kernel_initializer='lecun_uniform',
-                   bias_initializer='lecun_uniform'),
+                   bias_initializer='lecun_uniform', name='conv1'),
             MaxPooling2D(pool_size=(2, 2)),
             QConv2D(16, kernel_size=(3, 3), activation='relu',
                     kernel_initializer='lecun_uniform',
@@ -363,6 +363,52 @@ def test_set_data_types_from_keras_custom_best_type_algorithm(models):
                 for prec_key, precision in value['Precision'].items():
                     if prec_key not in qkeras_inferred and precision != 'dummy':
                         assert precision == f'ap_fixed<{i + 1},{i - 1}>'
+            elif value['Precision'] != 'dummy':
+                assert value['Precision'] == f'ap_fixed<{i + 1},{i - 1}>'
+
+
+def test_set_data_types_from_keras_optimal_type_errors_not_ignored(models):
+    for model in models:
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
+
+        def test_algorithm(layer_type, max_val, min_val, median, q1, q3, max_bits):
+            if layer_type in ['Dense', 'Conv2D']:
+                return None, None
+            else:
+                return 10, 5
+
+        with pytest.raises(RuntimeError, match=r'.*not find an optimal data type.*(fc1|conv1).*'):
+            hls4ml.utils.config.set_data_types_from_keras_model(config, model, ignore_optimal_type_errors=False,
+                                                                best_type_algorithm=test_algorithm)
+
+
+def test_set_data_types_from_keras_optimal_type_errors_ignored(models):
+    for i, model in enumerate(models, 10):
+        config = hls4ml.utils.config.config_from_keras_model(model, granularity='name', default_precision='dummy')
+
+        def test_algorithm(layer_type, max_val, min_val, median, q1, q3, max_bits):
+            if layer_type in ['Dense', 'Conv2D']:
+                return None, None
+            else:
+                return max_bits + 1, max_bits - 1
+
+        input_shape = (5,) + model.layers[0].input_shape[1:]
+        hls4ml.utils.config.set_data_types_from_keras_model(config, model, max_bits=i, ignore_optimal_type_errors=True,
+                                                            test_inputs=np.random.rand(*input_shape),
+                                                            best_type_algorithm=test_algorithm)
+
+        for value in config['LayerName'].values():
+            qkeras_inferred = value['QKerasInferred'] if 'QKerasInferred' in value else []
+
+            if isinstance(value['Precision'], dict):
+                for prec_key, precision in value['Precision'].items():
+                    if prec_key not in qkeras_inferred:
+                        if value['LayerType'] in ['Dense', 'Conv2D']:
+                            assert precision == 'dummy'
+                        elif precision != 'dummy':
+                            assert precision == f'ap_fixed<{i + 1},{i - 1}>'
+            elif value['LayerType'] in ['Dense', 'Conv2D']:
+                assert value['Precision'] == 'dummy'
             elif value['Precision'] != 'dummy':
                 assert value['Precision'] == f'ap_fixed<{i + 1},{i - 1}>'
 
